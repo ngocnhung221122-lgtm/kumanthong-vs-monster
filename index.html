@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yêu Quái Rượt Kumanthong</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background: #121212;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        h1 {
+            margin-bottom: 10px;
+            color: #ff5252;
+            text-shadow: 0 0 10px rgba(255, 82, 82, 0.5);
+            font-size: 1.8rem;
+        }
+        .game-container {
+            position: relative;
+            width: 800px;
+            height: 350px;
+            border: 4px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            overflow: hidden;
+            background: linear-gradient(to bottom, #1f1c2c, #928dab);
+        }
+        canvas {
+            display: block;
+        }
+        .ui-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+            z-index: 10;
+        }
+        .ui-screen h2 {
+            font-size: 2rem;
+            margin-bottom: 15px;
+            color: #ffcc00;
+        }
+        .ui-screen p {
+            font-size: 1.1rem;
+            margin-bottom: 25px;
+            line-height: 1.6;
+            color: #ddd;
+            max-width: 500px;
+        }
+        .btn {
+            background: #ff5252;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: 0 4px 15px rgba(255, 82, 82, 0.4);
+        }
+        .btn:hover {
+            background: #ff2525;
+            transform: scale(1.05);
+        }
+        .hidden {
+            display: none !important;
+        }
+        .score-board {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            z-index: 5;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Yêu Quái Rượt Kumanthong</h1>
+    
+    <div class="game-container">
+        <div class="score-board">Điểm: <span id="scoreVal">0</span></div>
+        
+        <!-- Màn hình hướng dẫn / Bắt đầu -->
+        <div id="startScreen" class="ui-screen">
+            <h2>HƯỚNG DẪN CHƠI</h2>
+            <p>
+                <b>Kumanthong</b> đang hoảng hốt chạy trốn sự rượt đuổi của <b>Yêu Quái nhỏ</b>!<br>
+                Nhấn <b>Phím Cách (Space)</b> hoặc <b>Mũi Tên Lên</b> để nhảy qua các chướng ngại vật.<br>
+                <i>Càng chạy nhanh, tốc độ rượt đuổi càng tăng khốc liệt!</i>
+            </p>
+            <button class="btn" onclick="startGame()">BẮT ĐẦU CHẠY</button>
+        </div>
+
+        <!-- Màn hình thua cuộc -->
+        <div id="gameOverScreen" class="ui-screen hidden">
+            <h2>BỊ BẮT RỒI!</h2>
+            <p id="finalScoreText">Bạn đã đạt được: 0 điểm</p>
+            <button class="btn" onclick="startGame()">CHƠI LẠI</button>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="350"></canvas>
+    </div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const startScreen = document.getElementById("startScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
+    const scoreVal = document.getElementById("scoreVal");
+    const finalScoreText = document.getElementById("finalScoreText");
+
+    // Biến trạng thái game
+    let gameRunning = false;
+    let score = 0;
+    let gameSpeed = 5;
+    let gravity = 0.6;
+
+    // Quản lý Âm thanh Web Audio API (Không cần file ngoài)
+    let audioCtx = null;
+    let bgmInterval = null;
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    // Hiệu ứng âm thanh Nhảy
+    function playJumpSound() {
+        if (!audioCtx) return;
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    }
+
+    // Hiệu ứng âm thanh Thua cuộc
+    function playGameOverSound() {
+        if (!audioCtx) return;
+        let osc = audioCtx.createOscillator();
+        let gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(50, audioCtx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    // Nhạc nền đơn giản hồi hộp
+    function startBGM() {
+        if (bgmInterval) clearInterval(bgmInterval);
+        let notes = [220, 246, 261, 293, 261, 246];
+        let index = 0;
+        bgmInterval = setInterval(() => {
+            if (!gameRunning || !audioCtx) return;
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(notes[index], audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+            index = (index + 1) % notes.length;
+        }, 300);
+    }
+
+    function stopBGM() {
+        if (bgmInterval) {
+            clearInterval(bgmInterval);
+            bgmInterval = null;
+        }
+    }
+
+    // Nhân vật Kumanthong
+    let kumanthong = {
+        x: 120,
+        y: 250,
+        width: 35,
+        height: 45,
+        dy: 0,
+        jumpPower: -11,
+        grounded: true,
+        draw() {
+            // Đầu vàng vàng bùa chú
+            ctx.fillStyle = "#ffdbac";
+            ctx.beginPath();
+            ctx.arc(this.x + 17, this.y + 12, 14, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Áo đỏ Kumanthong
+            ctx.fillStyle = "#d32f2f";
+            ctx.fillRect(this.x + 8, this.y + 24, 20, 18);
+
+            // Chân tay chạy hoạt họa
+            ctx.strokeStyle = "#ffdbac";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(this.x + 12, this.y + 42);
+            ctx.lineTo(this.x + 6, this.y + 48);
+            ctx.moveTo(this.x + 24, this.y + 42);
+            ctx.lineTo(this.x + 30, this.y + 48);
+            ctx.stroke();
+        }
+    };
+
+    // Nhân vật Yêu Quái rượt đuổi phía sau
+    let monster = {
+        x: 30,
+        y: 245,
+        width: 45,
+        height: 50,
+        draw() {
+            // Thân yêu quái màu tím/xanh đen ma quái
+            ctx.fillStyle = "#7b1fa2";
+            ctx.beginPath();
+            ctx.arc(this.x + 22, this.y + 20, 18, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mắt đỏ phát sáng
+            ctx.fillStyle = "#ffeb3b";
+            ctx.fillRect(this.x + 12, this.y + 12, 6, 6);
+            ctx.fillRect(this.x + 26, this.y + 12, 6, 6);
+            ctx.fillStyle = "#ff0000";
+            ctx.fillRect(this.x + 14, this.y + 14, 2, 2);
+            ctx.fillRect(this.x + 28, this.y + 14, 2, 2);
+        }
+    };
+
+    // Chướng ngại vật
+    let obstacles = [];
+    let obstacleTimer = 0;
+    let nextObstacleTime = 100;
+
+    function spawnObstacle() {
+        let types = ['box', 'tall'];
+        let type = types[Math.floor(Math.random() * types.length)];
+        let obs = {
+            x: canvas.width,
+            y: type === 'box' ? 260 : 220,
+            width: type === 'box' ? 25 : 30,
+            height: type === 'box' ? 35 : 75,
+            color: type === 'box' ? '#00e676' : '#ff9100'
+        };
+        obstacles.push(obs);
+    }
+
+    // Điều khiển bàn phím
+    window.addEventListener("keydown", (e) => {
+        if ((e.code === "Space" || e.code === "ArrowUp")) {
+            e.preventDefault();
+            if (!gameRunning && startScreen.classList.contains("hidden") && gameOverScreen.classList.contains("hidden")) return;
+            
+            if (gameRunning && kumanthong.grounded) {
+                kumanthong.dy = kumanthong.jumpPower;
+                kumanthong.grounded = false;
+                playJumpSound();
+            }
+        }
+    });
+
+    function startGame() {
+        initAudio();
+        startScreen.classList.add("hidden");
+        gameOverScreen.classList.add("hidden");
+        
+        // Reset trạng thái
+        obstacles = [];
+        score = 0;
+        gameSpeed = 5;
+        obstacleTimer = 0;
+        nextObstacleTime = 90;
+        kumanthong.y = 250;
+        kumanthong.dy = 0;
+        kumanthong.grounded = true;
+        
+        gameRunning = true;
+        scoreVal.innerText = score;
+        startBGM();
+        loop();
+    }
+
+    function gameOver() {
+        gameRunning = false;
+        stopBGM();
+        playGameOverSound();
+        finalScoreText.innerText = `Kumanthong đã chạy được: ${score} điểm!`;
+        gameOverScreen.classList.remove("hidden");
+    }
+
+    // Vòng lặp game chính
+    function loop() {
+        if (!gameRunning) return;
+
+        // Xóa màn hình
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Vẽ nền đường đi
+        ctx.fillStyle = "#37474f";
+        ctx.fillRect(0, 295, canvas.width, 55);
+        ctx.strokeStyle = "#ffeb3b";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, 295);
+        ctx.lineTo(canvas.width, 295);
+        ctx.stroke();
+
+        // Cập nhật và vẽ Kumanthong
+        kumanthong.dy += gravity;
+        kumanthong.y += kumanthong.dy;
+        if (kumanthong.y > 250) {
+            kumanthong.y = 250;
+            kumanthong.dy = 0;
+            kumanthong.grounded = true;
+        }
+        kumanthong.draw();
+
+        // Vẽ yêu quái rượt đuổi phía sau
+        monster.draw();
+
+        // Xử lý chướng ngại vật
+        obstacleTimer++;
+        if (obstacleTimer >= nextObstacleTime) {
+            spawnObstacle();
+            obstacleTimer = 0;
+            // Tốc độ ra chướng ngại vật ngẫu nhiên giảm dần khi game nhanh hơn
+            nextObstacleTime = Math.floor(Math.random() * 50) + Math.max(40, 90 - Math.floor(score / 5));
+        }
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let obs = obstacles[i];
+            obs.x -= gameSpeed;
+
+            // Vẽ chướng ngại vật
+            ctx.fillStyle = obs.color;
+            ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+
+            // Kiểm tra va chạm (AABB Collision)
+            if (
+                kumanthong.x < obs.x + obs.width &&
+                kumanthong.x + kumanthong.width > obs.x &&
+                kumanthong.y < obs.y + obs.height &&
+                kumanthong.y + kumanthong.height > obs.y
+            ) {
+                gameOver();
+                return;
+            }
+
+            // Xóa chướng ngại vật khi ra ngoài màn hình và cộng điểm
+            if (obs.x + obs.width < 0) {
+                obstacles.splice(i, 1);
+                score += 10;
+                scoreVal.innerText = score;
+
+                // TĂNG TỐC ĐỘ NGÀY CÀNG NHANH
+                gameSpeed = 5 + Math.floor(score / 50) * 0.8;
+                if (gameSpeed > 13) gameSpeed = 13; // Giới hạn tốc độ tối đa vừa tầm chơi
+            }
+        }
+
+        requestAnimationFrame(loop);
+    }
+</script>
+
+</body>
+</html>
